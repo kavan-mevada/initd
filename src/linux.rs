@@ -28,20 +28,12 @@ pub(crate) fn getbcap<'a>() -> std::io::Result<usize> {
     Ok(bnd)
 }
 
-pub(crate) fn setbcap<'a>(caps: usize) -> std::io::Result<()> {
-    let mut caps = caps;
-    let mut index = 0;
-    while caps != 0 {
-
-        if caps & 0x01 == 0 {
-            unsafe { __SYSCALL!(PRCTL, PR_CAPBSET_DROP, index) }?;
+pub(crate) fn setbcap<'a>(caps: usize) {
+    (0..(size_of::<usize>() * 8)).for_each(|i| {
+        if (caps >> i) & 0x01 == 0 {
+            unsafe { __SYSCALL!(PRCTL, PR_CAPBSET_DROP, i) };
         }
-
-        caps = caps >> 1;
-        index += 1;
-    }
-
-    Ok(())
+    });
 }
 
 pub(crate) fn getrlimit(resource: usize) -> std::io::Result<(u64, u64)> {

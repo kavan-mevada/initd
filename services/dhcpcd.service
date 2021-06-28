@@ -1,0 +1,40 @@
+ip = '127.0.0.1'
+
+[service]
+Label = 'system.sshd.org'
+Program = ['sshd', '-s', 'kavan@123.456.789']
+
+BroadcastDomain = 'network'
+SuccessCode = 145
+
+Requires = ['network', 'dhcp']
+Wants = ['ssh']
+
+
+[alive-on]
+JobBroadcast = 'network-up'
+ExitCode = 'on-failure'
+
+[security]
+UserName = nobody
+GroupName = nobody
+
+[job]
+ThrottleInterval = 30
+MaxThrottleCount = 5
+TimeOut = 40
+
+
+
+
+[keys.subkeys]
+github = 'xxxxxxxxx
+xxxxxxxx'
+travis = 'yyy'k'yyyyy
+yy yyyyyyy'
+dependencies = [ 'x,x', 'y
+yyy
+yysy', 'zz zzz']
+
+[hello]
+twitter = 'id'
