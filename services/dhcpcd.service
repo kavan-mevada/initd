@@ -7,7 +7,7 @@ Program = ['sshd', '-s', 'kavan@123.456.789']
 BroadcastDomain = 'network'
 SuccessCode = 145
 
-Requires = ['network', 'dhcp']
+Requires = ['google', 'apple']
 Wants = ['ssh']
 
 

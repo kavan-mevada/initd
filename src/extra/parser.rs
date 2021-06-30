@@ -54,6 +54,7 @@ impl<'a> Parsed {
                             current = TYPE::TABLE;
                             table.clear();
                         }
+                        
     
                         ']' | ',' if current == TYPE::ELEMENT => {
                             array.push(element.to_owned());

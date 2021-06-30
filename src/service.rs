@@ -1,74 +1,47 @@
 use core::str;
-use std::{ops::Deref, path::Path, rc::Rc};
+use std::{collections::HashMap, fs::File, io::Read, path::{PathBuf}, rc::Rc};
+
+
+#[derive(Debug)]
+pub enum Node { Empty, NonEmpty(i32, Rc<Node>) }
+
+
+
 
 
 #[derive(Debug, Clone)]
 pub struct Service {
-    pub Label: Rc<str>,
-    pub Program: Rc<[Rc<str>]>,
-    pub Requires: Rc<[Rc<str>]>,
-    pub Wants: Rc<[Rc<str>]>,
-    pub BroadcastDomain: Rc<str>,
-    pub SuccessCode: usize,
-
-    pub OnJobBroadcast: Option<Rc<str>>,
-    pub OnExitCode: Option<Rc<str>>,
+    data: HashMap<Rc<str>, Rc<str>>
 }
 
-impl Default for Service {
-    fn default() -> Self {
-        Self {
-            Label: Rc::from(""),
-            BroadcastDomain: Rc::from(""),
-            SuccessCode: 0,
-            Program: Rc::from([]),
-            Requires: Rc::from([]),
-            Wants: Rc::from([]),
-
-            OnJobBroadcast: None,
-            OnExitCode: None,
-        }
+impl Service {
+    pub fn new(path: &PathBuf) -> std::io::Result<Self> {
+        let file = File::open(path)?;
+        let mut mapped: HashMap<Rc<str>, Rc<str>> = HashMap::new();
+        open(file, |key, value| { mapped.entry(Rc::from(key)).or_insert(Rc::from(value)); });
+        Ok(Self { data: mapped })
     }
 }
 
-impl<'a> Service {
+// Main parser
+pub(crate) fn open<R, F>(reader: R, mut f: F) where R: Read, F: FnMut(&str, &str) {
+    let mut bytes = std::io::Read::bytes(reader);
 
-    pub fn from<'b, P>(path: P) -> Self where P: AsRef<Path> {
-        let mut _self = Service::default();
+    let wildcards = ['\n', '\r', '\t', ' ', '[', ']'];
 
-        Self::open(path, |key, value| {
-            match key.deref() {
-                "service.Label" => { _self.Label = value },
-                "service.Program" => { _self.Program = value.split('\'').map(Rc::from).collect() }
-                "service.Requires" => { _self.Requires = value.split('\'').map(Rc::from).collect() }
-                "service.Wants" => { _self.Wants = value.split('\'').map(Rc::from).collect() }
-                "service.BroadcastDomain" => { _self.BroadcastDomain = value }
-                "service.SuccessCode" => { _self.SuccessCode = value.parse().unwrap_or(0) }
+    let mut buffer = String::new();
+    let mut offset = 0usize;
 
-                "alive-on.JobBroadcast" => { _self.OnJobBroadcast = Some(value) }
-                "alive-on.ExitCode" => { _self.OnExitCode = Some(value) }
-                _ => ()
-            }
-        });
+    let mut quote = 0;
+    loop {
+        let b = bytes.next();
 
-        _self
-    }
+        if b.is_none() { break }
 
-    fn open<'b, P, F>(path: P, mut f: F) where P: AsRef<Path>, F: FnMut(Rc<str>, Rc<str>) {
-    
-        let file = std::fs::File::open(path.as_ref()).expect("Error opening file!");
-        let mut bytes = std::io::Read::bytes(file);
-    
-        let wildcards = ['\n', '\r', '\t', ' ', '[', ']'];
-    
-        let mut buffer = String::new();
-        let mut offset = 0usize;
-    
-        let mut quote = 0;
-        while let Some(Ok(b)) = bytes.next() {
+        if let Some(Ok(b)) = b {
             let mut c = b as char;
-    
-            if c == '\'' {
+
+            if c as char == '\'' {
                 quote += 1;
                 continue;
             }
@@ -77,16 +50,103 @@ impl<'a> Service {
                 if quote % 2 == 0 && c == ',' { c = '\'' }
                 buffer.push(c);
             }
-    
-            if quote % 2 == 0 && c == '\n' {
-                if let Some((key, value)) = buffer.split_once('=') {
-                    f(Rc::from(key), Rc::from(value));
-                    buffer.drain(offset..);
-                } else if buffer.len() > 0 {
-                    if offset != buffer.len() { buffer.drain(..offset); buffer.push('.') }
-                    offset = buffer.len()
-                }
-            }
+
+            if quote % 2 != 0 || c != '\n' { continue }
+        }
+
+
+        if let Some((key, value)) = buffer.split_once('=') {
+            f(key, value);
+
+            buffer.drain(offset..);
+        } else if buffer.len() > 0 {
+            if offset != buffer.len() { buffer.drain(..offset); buffer.push('.') }
+            offset = buffer.len()
         }
     }
 }
+
+
+
+#[test]
+fn parse_service_file() {
+    let data = std::io::Cursor::new(b"
+ip = '127.0.1.1'
+
+[keys.subkeys]
+github = 'xxxxxxxxx
+xxxxxxxx'
+
+
+travis = 'yyyyyyyy
+yy yyyyyyy'
+dependencies = [ 'x,x', 'y
+yyy
+yysy', 'zz zzz']
+
+[hello]
+twitter = 'id'");
+
+    open(data, |key, value| {
+        dbg!(key);
+        match key.deref() {
+            "ip" => assert_eq!(value, "127.0.1.1"),
+            "keys.subkeys.github" => assert_eq!(value, "xxxxxxxxx\nxxxxxxxx"),
+            "keys.subkeys.travis" => assert_eq!(value, "yyyyyyyy\nyy yyyyyyy"),
+            "keys.subkeys.dependencies" => assert_eq!(value, "x,x'y\nyyy\nyysy'zz zzz"),
+            "hello.twitter" => assert_eq!(value, "id"),
+            _ => assert!(false, "malformed data!")
+        };
+    });
+}
+
+
+
+
+
+
+
+
+// Main parser
+pub(crate) fn open2<'b, R, F>(reader: R, mut f: F) where R: Read, F: FnMut(&str, &str) + 'b {
+    let mut bytes = std::io::Read::bytes(reader);
+
+    let wildcards = ['\n', '\r', '\t', ' ', '[', ']'];
+
+    let mut buffer = String::new();
+    let mut offset = 0usize;
+
+    let mut quote = 0;
+    loop {
+        let b = bytes.next();
+
+        if b.is_none() { break }
+
+        if let Some(Ok(b)) = b {
+            let mut c = b as char;
+
+            if c as char == '\'' {
+                quote += 1;
+                continue;
+            }
+    
+            if quote % 2 != 0 || (quote % 2 == 0 && (c == ',' || !wildcards.contains(&c))) {
+                if quote % 2 == 0 && c == ',' { c = '\'' }
+                buffer.push(c);
+            }
+
+            if quote % 2 != 0 || c != '\n' { continue }
+        }
+
+
+        if let Some((key, value)) = buffer.split_once('=') {
+            f(key, value);
+
+            buffer.drain(offset..);
+        } else if buffer.len() > 0 {
+            if offset != buffer.len() { buffer.drain(..offset); buffer.push('.') }
+            offset = buffer.len()
+        }
+    }
+}
+

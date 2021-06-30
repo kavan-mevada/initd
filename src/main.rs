@@ -9,23 +9,32 @@ mod linux;
 mod platform;
 mod service;
 
-use std::{ffi::OsStr, fs::{File, read_dir}, io::Result};
-
-use crate::{linux::{RLIMIT_NOFILE, execve, getbcap, getrlimit, setbcap, setrlimit}, service::{Service}};
+use std::{ffi::OsStr, fs::read_dir, io::Result, rc::Rc};
+use crate::{linux::{RLIMIT_NOFILE, execve, getbcap, getrlimit, setbcap, setrlimit}, service::{Node, Service}};
 
 fn main() -> Result<()> {
     println!("Hello, world!");
 
+
+
+    let node = Node::NonEmpty(23, Rc::from(Node::NonEmpty(45, Rc::from(Node::Empty))));
+    dbg!(&node);
+
+
+
+
     let dir = read_dir("services")?
         .filter_map(Result::ok);
-    for files in dir {
-        let path = files.path();
 
+    for entry in dir {
+        let path = entry.path();
         if path.extension() == Some(OsStr::new("service")) {
-            let s = Service::from(path);
+            let s = Service::new(&path);
             dbg!(s);
         }
     }
+
+
 
     //dbg!(services);
 
@@ -50,6 +59,7 @@ fn main() -> Result<()> {
     // )?;
 
 
+    
 
     execve(
         &["/bin/sh", "-c", "./target/debug/test"],
@@ -59,14 +69,4 @@ fn main() -> Result<()> {
     //dbg!(std::io::Error::last_os_error());
 
     Ok(())
-}
-
-
-
-#[bench]
-fn rc_implementation(b: &mut test::Bencher) {
-    b.iter(|| {
-        let s = Service::from("myapp.service");
-        assert!(s.Label == std::rc::Rc::from("system.sshd.org"), "Error reading!");
-    })
 }
