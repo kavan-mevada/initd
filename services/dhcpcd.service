@@ -1,7 +1,7 @@
 ip = '127.0.0.1'
 
 [service]
-Label = 'system.sshd.org'
+Label = 'dhcpcd'
 Program = ['sshd', '-s', 'kavan@123.456.789']
 
 BroadcastDomain = 'network'
